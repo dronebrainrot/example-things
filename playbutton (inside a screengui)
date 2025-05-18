@@ -1,0 +1,8 @@
+local playButton = script.Parent:WaitForChild("PlayButton")
+local startGameEvent = game.ReplicatedStorage:WaitForChild("StartGameEvent")
+local leaderboardbutton = script.Parent.Parent.ScreenGui.LeaderboardButton
+playButton.MouseButton1Click:Connect(function()
+	startGameEvent:FireServer()
+	playButton.Visible = false
+	leaderboardbutton.Visible = false
+end)
