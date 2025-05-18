@@ -1,0 +1,70 @@
+local DataStoreService = game:GetService("DataStoreService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local pointsDataStore = DataStoreService:GetOrderedDataStore("GlobalTotalPoints")
+local requestLeaderboard = Instance.new("RemoteFunction")
+requestLeaderboard.Name = "RequestLeaderboard"
+requestLeaderboard.Parent = ReplicatedStorage
+local function savePlayerPoints(player)
+	local leaderstats = player:FindFirstChild("leaderstats")
+	if leaderstats then
+		local totalPoints = leaderstats:FindFirstChild("TotalPoints")
+		if totalPoints then
+			pcall(function()
+				pointsDataStore:SetAsync(tostring(player.UserId), totalPoints.Value)
+			end)
+		end
+	end
+end
+local function trackStatChanges(player)
+	local leaderstats = player:WaitForChild("leaderstats", 5)
+	if leaderstats then
+		local totalPoints = leaderstats:FindFirstChild("TotalPoints")
+		if totalPoints then
+			totalPoints.Changed:Connect(function()
+				savePlayerPoints(player)
+			end)
+		end
+	end
+end
+Players.PlayerAdded:Connect(function(player)
+	player.CharacterAdded:Connect(function()
+		task.wait(1)
+		trackStatChanges(player)
+	end)
+end)
+Players.PlayerRemoving:Connect(savePlayerPoints)
+
+game:BindToClose(function()
+	for _, player in ipairs(Players:GetPlayers()) do
+		savePlayerPoints(player)
+	end
+end)
+requestLeaderboard.OnServerInvoke = function(player)
+	local success, pages = pcall(function()
+		return pointsDataStore:GetSortedAsync(false, 100)
+	end)
+	local data = pages:GetCurrentPage()
+	local leaderboard = {}
+
+	for _, entry in ipairs(data) do
+		local userId = tonumber(entry.key)
+		local username = "[Unknown]"
+
+		if userId then
+			local nameSuccess, nameResult = pcall(function()
+				return Players:GetNameFromUserIdAsync(userId)
+			end)
+			if nameSuccess then
+				username = nameResult
+			end
+		end
+
+		table.insert(leaderboard, {
+			Name = username,
+			Points = entry.value
+		})
+	end
+
+	return leaderboard
+end
