@@ -1,0 +1,66 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local requestLeaderboard = ReplicatedStorage:WaitForChild("RequestLeaderboard")
+
+local screenGui = script.Parent
+local leaderboardButton = screenGui:WaitForChild("LeaderboardButton")
+local leaderboardFrame = screenGui:WaitForChild("LeaderboardFrame")
+local container = leaderboardFrame:WaitForChild("List")
+local template = container:WaitForChild("Template")
+local TweenService = game:GetService("TweenService")
+
+local updating = false
+
+local function moveButton(targetPosition)
+	local tweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	local goal = {Position = targetPosition}
+	local tween = TweenService:Create(leaderboardButton, tweenInfo, goal)
+	tween:Play()
+end
+
+local function updateLeaderboard()
+	for _, child in ipairs(container:GetChildren()) do
+		if child:IsA("Frame") and child ~= template then
+			child:Destroy()
+		end
+	end
+
+	local leaderboardData = requestLeaderboard:InvokeServer()
+
+	for i = 1, 100 do
+		local newEntry = template:Clone()
+		newEntry.Visible = true
+		newEntry.Name = "Entry_" .. i
+
+		if leaderboardData[i] then
+			newEntry.Username.Text = leaderboardData[i].Name
+			newEntry.Score.Text = tostring(leaderboardData[i].Points)
+		else
+			newEntry.Username.Text = "No Player"
+			newEntry.Score.Text = "0"
+		end
+
+		newEntry.Position = UDim2.new(0, 0, 0, (i - 1) * newEntry.Size.Y.Offset)
+		newEntry.Parent = container
+	end
+
+	container.CanvasSize = UDim2.new(0, 0, 0, 100 * template.Size.Y.Offset)
+end
+local function startUpdatingLeaderboard()
+	updating = true
+	while updating and leaderboardFrame.Visible do
+		updateLeaderboard()
+		task.wait(5)
+	end
+end
+
+leaderboardButton.MouseButton1Click:Connect(function()
+	leaderboardFrame.Visible = not leaderboardFrame.Visible
+
+	if leaderboardFrame.Visible then
+		moveButton(leaderboardButton.Position + UDim2.new(0, 0, 0, 180))
+		startUpdatingLeaderboard()
+	else
+		moveButton(leaderboardButton.Position - UDim2.new(0, 0, 0, 180))
+		updating = false
+	end
+end)
