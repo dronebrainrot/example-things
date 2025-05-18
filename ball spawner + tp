@@ -1,0 +1,228 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local PhysicsService = game:GetService("PhysicsService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local DataStoreService = game:GetService("DataStoreService")
+
+local scoreStore = DataStoreService:GetDataStore("HighScoreStore")
+
+pcall(function() PhysicsService:CreateCollisionGroup("Walls") end)
+pcall(function() PhysicsService:CreateCollisionGroup("Ball") end)
+pcall(function() PhysicsService:CreateCollisionGroup("Platform") end)
+
+PhysicsService:CollisionGroupSetCollidable("Ball", "Walls", false)
+PhysicsService:CollisionGroupSetCollidable("Ball", "Platform", true)
+PhysicsService:CollisionGroupSetCollidable("Ball", "Ball", false)
+PhysicsService:CollisionGroupSetCollidable("Platform", "Walls", false)
+
+local function setupWalls()
+	for _, wallName in ipairs({"Wall1", "Wall2", "Wall3"}) do
+		local wall = Workspace:FindFirstChild(wallName)
+		if wall then
+			PhysicsService:SetPartCollisionGroup(wall, "Walls")
+		end
+	end
+end
+
+setupWalls()
+
+local function createLeaderstat(player)
+	local leaderstats = player:FindFirstChild("leaderstats")
+	if not leaderstats then
+		leaderstats = Instance.new("Folder")
+		leaderstats.Name = "leaderstats"
+		leaderstats.Parent = player
+	end
+
+	if not leaderstats:FindFirstChild("BallsCaught") then
+		local ballsCaught = Instance.new("IntValue")
+		ballsCaught.Name = "BallsCaught"
+		ballsCaught.Value = 0
+		ballsCaught.Parent = leaderstats
+	end
+
+	if not leaderstats:FindFirstChild("TotalPoints") then
+		local totalPoints = Instance.new("IntValue")
+		totalPoints.Name = "TotalPoints"
+		totalPoints.Value = 0
+		totalPoints.Parent = leaderstats
+	end
+end
+
+local function loadHighScore(player)
+	local userId = tostring(player.UserId)
+	local success, data = pcall(function()
+		return scoreStore:GetAsync(userId)
+	end)
+	if success and data then
+		player.leaderstats.TotalPoints.Value = data
+	end
+end
+
+local function saveHighScore(player)
+	local userId = tostring(player.UserId)
+	local highScore = player:FindFirstChild("leaderstats") and player.leaderstats:FindFirstChild("TotalPoints")
+	if highScore then
+		pcall(function()
+			scoreStore:SetAsync(userId, highScore.Value)
+		end)
+	end
+end
+
+Players.PlayerAdded:Connect(function(player)
+	createLeaderstat(player)
+	loadHighScore(player)
+end)
+
+Players.PlayerRemoving:Connect(saveHighScore)
+game:BindToClose(function()
+	for _, player in ipairs(Players:GetPlayers()) do
+		saveHighScore(player)
+	end
+end)
+
+local function createPlatform(player)
+	local platform = Instance.new("Part")
+	platform.Name = "CatcherPlatform"
+	platform.Size = Vector3.new(4, 0.5, 4)
+	platform.BrickColor = BrickColor.new("Bright green")
+	platform.Anchored = false
+	platform.CanCollide = true
+	platform.Massless = true
+	platform.TopSurface = Enum.SurfaceType.Smooth
+	platform.BottomSurface = Enum.SurfaceType.Smooth
+	platform.Parent = Workspace
+	platform.CFrame = player.Character.HumanoidRootPart.CFrame * CFrame.new(0, 5, 0)
+	PhysicsService:SetPartCollisionGroup(platform, "Platform")
+
+	local weld = Instance.new("WeldConstraint")
+	weld.Part0 = platform
+	weld.Part1 = player.Character:WaitForChild("HumanoidRootPart")
+	weld.Parent = platform
+
+	return platform
+end
+
+local function createBall(player)
+	local ball = Instance.new("Part")
+	ball.Name = "FallingBall"
+	ball.Shape = Enum.PartType.Ball
+	ball.Size = Vector3.new(5, 5, 5)
+	ball.Anchored = false
+	ball.CanCollide = true
+	ball.Massless = false
+	ball.BrickColor = BrickColor.new("Bright red")
+	ball.Material = Enum.Material.SmoothPlastic
+	ball.TopSurface = Enum.SurfaceType.Smooth
+	ball.BottomSurface = Enum.SurfaceType.Smooth
+	ball:SetAttribute("IsBall", true)
+	ball:SetAttribute("Scored", false)
+	ball:SetAttribute("Debounced", false)
+	PhysicsService:SetPartCollisionGroup(ball, "Ball")
+	ball.Parent = Workspace
+
+	local ballSpawnPart = Workspace:WaitForChild("BallSpawnPart")
+	local spawnPos = ballSpawnPart.Position + Vector3.new(
+		math.random(-ballSpawnPart.Size.X/2, ballSpawnPart.Size.X/2),
+		math.random(0, ballSpawnPart.Size.Y),
+		math.random(-ballSpawnPart.Size.Z/2, ballSpawnPart.Size.Z/2)
+	)
+	ball.Position = spawnPos
+
+	local isGolden = math.random(1, 50) == 1
+	if isGolden then
+		ball.BrickColor = BrickColor.new("Gold")
+		ball.Material = Enum.Material.Metal
+		ball:SetAttribute("IsGolden", true)
+	end
+
+	local gravity = Instance.new("BodyVelocity")
+	gravity.Velocity = Vector3.new(0, -5, 0)
+	gravity.MaxForce = Vector3.new(0, math.huge, 0)
+	gravity.P = 1000
+	gravity.Parent = ball
+
+	local attachment0 = Instance.new("Attachment")
+	attachment0.Position = Vector3.new(0, ball.Size.Y / 2, 0)
+	attachment0.Parent = ball
+
+	local attachment1 = Instance.new("Attachment")
+	attachment1.Position = Vector3.new(0, -ball.Size.Y / 2, 0)
+	attachment1.Parent = ball
+
+	local trail = Instance.new("Trail")
+	trail.Attachment0 = attachment0
+	trail.Attachment1 = attachment1
+	trail.Lifetime = 0.5
+	trail.WidthScale = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1),
+		NumberSequenceKeypoint.new(1, 0)
+	})
+	trail.Color = ColorSequence.new(ball.BrickColor.Color)
+	trail.LightEmission = 1
+	trail.Transparency = NumberSequence.new(0.3)
+	trail.Enabled = true
+	trail.Parent = ball
+
+	local ballGone = Workspace:FindFirstChild("BallGone")
+	if ballGone then
+		ball.Touched:Connect(function(hit)
+			if hit == ballGone and not ball:GetAttribute("Debounced") then
+				ball:SetAttribute("Debounced", true)
+				for _, player in ipairs(Players:GetPlayers()) do
+					if player.leaderstats and player.leaderstats:FindFirstChild("BallsCaught") then
+						player.leaderstats.BallsCaught.Value = 0
+					end
+				end
+				ball:Destroy()
+			end
+		end)
+	end
+
+	return ball
+end
+
+local function onPlatformTouch(platform, player)
+	platform.Touched:Connect(function(hit)
+		if hit:IsA("Part") and hit:GetAttribute("IsBall") and not hit:GetAttribute("Scored") and not hit:GetAttribute("Debounced") then
+			hit:SetAttribute("Scored", true)
+			hit:SetAttribute("Debounced", true)
+
+			if hit:GetAttribute("IsGolden") then
+				player.leaderstats.BallsCaught.Value += 5
+			else
+				player.leaderstats.BallsCaught.Value += 1
+			end
+
+			local caught = player.leaderstats.BallsCaught.Value
+			local best = player.leaderstats.TotalPoints.Value
+			if caught > best then
+				player.leaderstats.TotalPoints.Value = caught
+				saveHighScore(player)
+			end
+
+			hit:Destroy()
+			task.delay(1, function()
+				createBall(player)
+			end)
+		end
+	end)
+end
+
+local function spawnBalls(player, ballCount)
+	for i = 1, ballCount do
+		task.delay(2 * (i - 1), function()
+			createBall(player)
+		end)
+	end
+end
+
+ReplicatedStorage.StartGameEvent.OnServerEvent:Connect(function(player)
+	player.leaderstats.BallsCaught.Value = 0
+	local spawnPoint = Workspace:WaitForChild("SpawnPoint")
+	player.Character:SetPrimaryPartCFrame(spawnPoint.CFrame)
+	local platform = createPlatform(player)
+	onPlatformTouch(platform, player)
+	spawnBalls(player, 5)
+end)
